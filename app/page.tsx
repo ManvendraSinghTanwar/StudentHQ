@@ -26,6 +26,51 @@ function intentToAgent(intent: ContentIntent) {
   return 'router'
 }
 
+// TODO: replace with the authenticated user's id once auth is wired in
+const STUDENT_ID = 'student_002'
+
+type RoutingResult = {
+  intent: ContentIntent
+  confidence: number
+  recommendedAgents: string[]
+  processedLocally: boolean
+}
+
+// Forward the captured input + detected intent to n8n via /api/ingest.
+// Fire-and-forget: n8n processes asynchronously and posts the result back to
+// /api/agent-result, which the Results page reads from Supabase.
+async function sendToIngest(args: {
+  text: string
+  source: 'document' | 'camera' | 'voice'
+  routing: RoutingResult
+  file?: { name: string; type: string; size: number }
+}) {
+  const { text, source, routing, file } = args
+  try {
+    const res = await fetch('/api/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: STUDENT_ID,
+        source,
+        text,
+        raw_text: text,
+        intent: routing.intent,
+        confidence: routing.confidence,
+        recommendedAgents: routing.recommendedAgents,
+        processedLocally: routing.processedLocally,
+        file,
+        timestamp: new Date().toISOString(),
+      }),
+    })
+    if (!res.ok) {
+      console.error('[v0] Ingest forward failed:', res.status, await res.text())
+    }
+  } catch (error) {
+    console.error('[v0] Ingest forward error:', error)
+  }
+}
+
 function HomeContent() {
   const router = useRouter()
   const { setProcessingState, setActiveAgent } = useApp()
@@ -178,6 +223,15 @@ function HomeContent() {
     sessionStorage.setItem('studentos.uploadedFile', JSON.stringify(uploadPayload))
     sessionStorage.setItem('studentos.routingResult', JSON.stringify(routingResult))
 
+    // Forward the captured input + intent to n8n (async, result comes back via
+    // /api/agent-result → Supabase → Results page)
+    void sendToIngest({
+      text: uploadPayload.extractedText ?? analysisContent,
+      source,
+      routing: routingResult,
+      file: { name: file.name, type: file.type, size: file.size },
+    })
+
     setProcessingState('processing')
     setActiveAgent(intentToAgent(routingResult.intent))
     router.push('/processing')
@@ -284,6 +338,15 @@ function HomeContent() {
           }),
         )
         sessionStorage.setItem('studentos.routingResult', JSON.stringify(routingResult))
+
+        // Forward the spoken text + intent to n8n
+        void sendToIngest({
+          text: finalTranscript,
+          source: 'voice',
+          routing: routingResult,
+          file: { name: 'voice-note.txt', type: 'text/plain', size: finalTranscript.length },
+        })
+
         setProcessingState('processing')
         setActiveAgent(intentToAgent(routingResult.intent))
         router.push('/processing')

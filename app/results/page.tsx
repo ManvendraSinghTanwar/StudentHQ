@@ -115,16 +115,23 @@ function ResultsContent() {
         const res = await fetch('/api/agent-result?studentId=student_002', { cache: 'no-store' })
         if (!res.ok) throw new Error(`Request failed (${res.status})`)
         const json = await res.json()
-        if (active) setResults(json.results ?? [])
+        if (active) {
+          setResults(json.results ?? [])
+          setError(null)
+        }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Failed to load results')
       } finally {
         if (active) setLoading(false)
       }
     }
+
     load()
+    // Poll so results n8n posts back asynchronously show up without a manual refresh
+    const interval = setInterval(load, 5000)
     return () => {
       active = false
+      clearInterval(interval)
     }
   }, [])
 
