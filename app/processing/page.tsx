@@ -111,14 +111,6 @@ function ProcessingContent() {
       // Route the content using cloud endpoint (WebLLM as fallback)
       const routeContent = async () => {
         try {
-          const storedRouting = sessionStorage.getItem('studentos.routingResult')
-          if (storedRouting) {
-            const parsed = JSON.parse(storedRouting)
-            setRoutingResult(parsed)
-            console.log('[v0] Using stored routing result:', parsed)
-            return
-          }
-
           let sampleContent: string
           
           if (uploadedFile?.extractedText) {
