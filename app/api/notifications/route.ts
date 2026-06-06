@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+
+import { createRequestClient, resolveStudentId } from '@/lib/supabase/request'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const supabase = await createRequestClient()
+    const studentId = await resolveStudentId(request, supabase)
 
-    if (!user) {
+    if (!studentId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch user's notifications from database
     const { data: notifications, error } = await supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', studentId)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -38,7 +36,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = await createRequestClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -49,7 +47,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Create notification in database
     const { data: notification, error } = await supabase
       .from('notifications')
       .insert({
@@ -60,6 +57,7 @@ export async function POST(request: NextRequest) {
         is_read: false,
       })
       .select()
+      .single()
 
     if (error) {
       throw error
@@ -67,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      notification: notification?.[0],
+      notification,
     })
   } catch (error) {
     console.error('Failed to create notification:', error)

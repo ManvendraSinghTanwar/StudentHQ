@@ -30,8 +30,8 @@ const intentPrompt = `Classify the following content into ONE of these categorie
 Content:
 {content}
 
-Return ONLY JSON:
-{"intent":"assignment","confidence":0.95, "desc": "explain what the content is about in one sentence."}`
+Return ONLY a raw JSON object with no markdown fences, no code block, and no extra text:
+{"intent":"assignment","confidence":0.95,"desc":"explain what the content is about in one sentence."}`
 
 const recommendedAgentMap: Record<ContentIntent, string[]> = {
   assignment: ['study', 'schedule'],
@@ -41,6 +41,24 @@ const recommendedAgentMap: Record<ContentIntent, string[]> = {
   event: ['schedule'],
   mess_menu: ['health'],
   general: ['content'],
+}
+
+function extractRouterJson(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  const candidate = fenced?.[1] ?? text
+
+  const directObject = candidate.match(/\{[\s\S]*\}/)
+  if (directObject) {
+    return directObject[0]
+  }
+
+  const firstBrace = candidate.indexOf('{')
+  const lastBrace = candidate.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return candidate.slice(firstBrace, lastBrace + 1)
+  }
+
+  return null
 }
 
 // Small, fast classifier models. We pick the quantization at runtime based on
@@ -437,14 +455,16 @@ export async function routeContentLocally(
 
   const text = response?.choices?.[0]?.message?.content ?? ''
 
-  const match = text.match(/\{[\s\S]*\}/)
+  const match = extractRouterJson(text)
 
-  if (!match) throw new Error('invalid output')
+  if (!match) {
+    return routeContentCloud(content)
+  }
 
   let parsed: any
 
   try {
-    parsed = JSON.parse(match[0])
+    parsed = JSON.parse(match)
   } catch {
     parsed = { intent: 'general', confidence: 0.5 }
   }

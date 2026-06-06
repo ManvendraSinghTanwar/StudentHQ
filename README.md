@@ -116,8 +116,26 @@ Ensure these environment variables are configured in your Vercel project:
 ### Notifications
 - `GET /api/notifications` - Fetch user notifications
 - `POST /api/notifications` - Create new notification
+- `PATCH /api/notifications/:id` - Mark notification read or update fields
 - `POST /api/notifications/subscribe` - Subscribe to push notifications
 - `POST /api/notifications/unsubscribe` - Unsubscribe from push notifications
+
+### Student Data
+- `POST /api/agent-result` - Receive n8n results with `x-studenthq-secret`
+- `POST /api/ingest` - Forward PWA payloads to n8n `/studenthq/ingest`
+- `GET /api/assignments?studentId=x`
+- `GET /api/study-plans?studentId=x`
+- `GET /api/study-materials?studentId=x`
+- `GET /api/deadlines?studentId=x`
+- `GET /api/content-drafts?studentId=x`
+- `GET /api/health-logs?studentId=x`
+- `PATCH /api/assignments/:id` - Update assignment status or fields
+
+### Environment Variables
+Add these server-side values for the new n8n flow:
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `STUDENTHQ_SECRET`
+- `N8N_BASE_URL` or `N8N_INGEST_URL`
 
 ## File Structure
 
