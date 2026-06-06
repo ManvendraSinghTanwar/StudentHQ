@@ -1,6 +1,8 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
+import { createRequestClient, resolveStudentId } from '@/lib/supabase/request'
+
 type AgentResultPayload = {
   studentId?: string
   userId?: string
@@ -81,6 +83,35 @@ export async function POST(request: NextRequest) {
     console.error('Failed to store agent result:', error)
     return NextResponse.json(
       { error: 'Failed to store agent result' },
+      { status: 500 },
+    )
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createRequestClient()
+    const studentId = await resolveStudentId(request, supabase)
+
+    if (!studentId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data, error } = await supabase
+      .from('processing_results')
+      .select('*')
+      .eq('user_id', studentId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({ success: true, results: data ?? [] })
+  } catch (error) {
+    console.error('Failed to fetch agent results:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch agent results' },
       { status: 500 },
     )
   }

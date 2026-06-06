@@ -1,13 +1,13 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { BottomNavigation } from '@/components/layout/BottomNavigation'
 import { ResultCard } from '@/components/results/ResultCard'
-import { GlassmorphismCard } from '@/components/cards/GlassmorphismCard'
-import { AppProvider, useApp } from '@/contexts/AppContext'
+import { AppProvider } from '@/contexts/AppContext'
 import { NotificationProvider } from '@/contexts/NotificationContext'
 
-const resultIcons = {
+const resultIcons: Record<string, string> = {
   assignment: '📚',
   notes: '📝',
   receipt: '🧾',
@@ -15,213 +15,158 @@ const resultIcons = {
   menu: '🍽️',
 }
 
-function ResultsContent() {
-  const { processingResult } = useApp()
+// A row from the Supabase `processing_results` table
+interface ProcessingResultRow {
+  id: string
+  user_id: string
+  result_type: string
+  result_data: {
+    type?: string
+    data?: Record<string, any>
+    actions?: string[]
+  } | null
+  agent_type: string | null
+  status: string | null
+  created_at: string
+}
 
-  if (!processingResult) {
-    return (
-      <div className="min-h-screen bg-background pb-32 pt-8 px-4">
-        <div className="max-w-2xl mx-auto">
-          <h1 className="text-3xl font-bold text-foreground mb-8">Results</h1>
-          <div className="text-center py-12">
-            <p className="text-muted-foreground mb-6">No results yet</p>
-            <p className="text-sm text-muted-foreground">
-              Process something to see results here
-            </p>
-          </div>
-        </div>
-        <BottomNavigation />
+// Normalize a stored row into { type, data, actions } regardless of how it was saved
+function normalizeRow(row: ProcessingResultRow) {
+  const rd = row.result_data ?? {}
+  const type = (rd.type ?? row.result_type ?? 'general').toLowerCase()
+  const data = (rd.data ?? rd ?? {}) as Record<string, any>
+  const actions = rd.actions ?? []
+  return { type, data, actions }
+}
+
+function AssignmentResult({ data, actions }: { data: Record<string, any>; actions: string[] }) {
+  const tasks: string[] = data.tasks ?? data.studyPlan ?? []
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {data.subject && (
+          <span className="px-2 py-1 bg-primary/20 text-primary text-xs rounded">{data.subject}</span>
+        )}
+        {data.priority && (
+          <span className="px-2 py-1 bg-accent/20 text-accent text-xs rounded">{data.priority} priority</span>
+        )}
+        {data.estimated_hours != null && (
+          <span className="px-2 py-1 bg-white/10 text-foreground text-xs rounded">
+            ~{data.estimated_hours}h
+          </span>
+        )}
       </div>
-    )
-  }
 
-  const { type, data } = processingResult
-  const icon = resultIcons[type as keyof typeof resultIcons]
+      {data.deadline && (
+        <div className="mt-4 p-3 bg-accent/20 rounded-lg">
+          <p className="text-xs text-muted-foreground mb-1">Deadline</p>
+          <p className="font-bold text-accent">{data.deadline}</p>
+        </div>
+      )}
+
+      {tasks.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold text-foreground mb-3">Tasks</p>
+          <ol className="space-y-2">
+            {tasks.map((step, i) => (
+              <li key={i} className="text-xs text-muted-foreground flex gap-2">
+                <span className="flex-shrink-0">{i + 1}.</span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {actions.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {actions.map((a, i) => (
+            <span key={i} className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded">
+              ✓ {a.replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {data.raw_text && (
+        <p className="mt-4 text-xs text-muted-foreground italic">“{data.raw_text}”</p>
+      )}
+    </>
+  )
+}
+
+function GenericResult({ data }: { data: Record<string, any> }) {
+  return (
+    <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+      {JSON.stringify(data, null, 2)}
+    </pre>
+  )
+}
+
+function ResultsContent() {
+  const [results, setResults] = useState<ProcessingResultRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    async function load() {
+      try {
+        const res = await fetch('/api/agent-result?studentId=student_002', { cache: 'no-store' })
+        if (!res.ok) throw new Error(`Request failed (${res.status})`)
+        const json = await res.json()
+        if (active) setResults(json.results ?? [])
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Failed to load results')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      active = false
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-background pb-32 pt-8 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
-        {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-3xl font-bold text-foreground">Results</h1>
           <p className="text-muted-foreground text-sm mt-1">Your AI-processed insights</p>
         </motion.div>
 
-        {/* Result Type: Assignment */}
-        {type === 'assignment' && (
-          <>
-            <ResultCard title={data.title} icon={icon} delay={0.1}>
-              <p className="text-sm text-muted-foreground">{data.summary}</p>
-              <div className="mt-4 p-3 bg-accent/20 rounded-lg">
-                <p className="text-xs text-muted-foreground mb-2">Deadline</p>
-                <p className="font-bold text-accent">{data.deadline} remaining</p>
-              </div>
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-foreground mb-3">Study Plan</p>
-                <ol className="space-y-2">
-                  {data.studyPlan.map((step: string, i: number) => (
-                    <li key={i} className="text-xs text-muted-foreground flex gap-2">
-                      <span className="flex-shrink-0">{i + 1}.</span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </ResultCard>
-          </>
+        {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
+
+        {error && !loading && (
+          <p className="text-sm text-red-400">Couldn’t load results: {error}</p>
         )}
 
-        {/* Result Type: Notes */}
-        {type === 'notes' && (
-          <>
-            <ResultCard title={data.title} icon={icon} delay={0.1}>
-              <p className="text-sm text-muted-foreground">{data.summary}</p>
-              <div className="mt-4">
-                <p className="text-xs font-semibold text-foreground mb-3">Flashcards</p>
-                <div className="space-y-2">
-                  {data.flashcards.map((card: any, i: number) => (
-                    <GlassmorphismCard key={i} hover={false}>
-                      <p className="text-xs text-muted-foreground">Q: {card.front}</p>
-                      <p className="text-sm text-accent font-medium mt-2">A: {card.back}</p>
-                    </GlassmorphismCard>
-                  ))}
-                </div>
-              </div>
-            </ResultCard>
-          </>
+        {!loading && !error && results.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground mb-6">No results yet</p>
+            <p className="text-sm text-muted-foreground">Process something to see results here</p>
+          </div>
         )}
 
-        {/* Result Type: Receipt */}
-        {type === 'receipt' && (
-          <>
-            <ResultCard title={data.title} icon={icon} delay={0.1}>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Merchant</span>
-                  <span className="font-medium text-foreground">{data.merchant}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Amount</span>
-                  <span className="font-bold text-accent text-lg">{data.amount}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Category</span>
-                  <span className="px-2 py-1 bg-primary/20 text-primary text-xs rounded">
-                    {data.category}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Date</span>
-                  <span className="text-sm text-foreground">{data.date}</span>
-                </div>
-                <div className="mt-4 p-3 bg-accent/20 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Smart Insight</p>
-                  <p className="text-sm text-accent">{data.insight}</p>
-                </div>
-              </div>
+        {results.map((row, index) => {
+          const { type, data, actions } = normalizeRow(row)
+          const icon = resultIcons[type] ?? '✨'
+          const title =
+            data.title ?? data.position ?? data.merchant ?? data.todaysMeal ?? row.result_type
+          return (
+            <ResultCard key={row.id} title={title} icon={icon} delay={0.05 * index}>
+              {type === 'assignment' ? (
+                <AssignmentResult data={data} actions={actions} />
+              ) : (
+                <GenericResult data={data} />
+              )}
+              <p className="mt-4 text-[10px] text-muted-foreground">
+                via {row.agent_type ?? 'agent'} · {new Date(row.created_at).toLocaleString()}
+              </p>
             </ResultCard>
-          </>
-        )}
-
-        {/* Result Type: Job */}
-        {type === 'job' && (
-          <>
-            <ResultCard title={data.title} icon={icon} delay={0.1}>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Position</p>
-                  <p className="font-semibold text-foreground">{data.position}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">Match Score</p>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${data.matchPercentage}%` }}
-                        transition={{ duration: 1 }}
-                        className="h-full bg-gradient-to-r from-primary to-accent"
-                      />
-                    </div>
-                    <span className="font-bold text-foreground">{data.matchPercentage}%</span>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-foreground mb-2">Key Skills Required</p>
-                  <div className="flex flex-wrap gap-2">
-                    {data.keySkills.map((skill: string, i: number) => (
-                      <span
-                        key={i}
-                        className="px-3 py-1 bg-primary/20 text-primary text-xs rounded-full"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-4 p-3 bg-white/5 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-2">Application Draft</p>
-                  <p className="text-xs text-foreground italic">{data.applicationDraft}</p>
-                </div>
-              </div>
-            </ResultCard>
-          </>
-        )}
-
-        {/* Result Type: Menu */}
-        {type === 'menu' && (
-          <>
-            <ResultCard title={data.title} icon={icon} delay={0.1}>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Today&apos;s Meal</p>
-                  <p className="font-semibold text-foreground text-lg">{data.todaysMeal}</p>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  <div className="text-center p-2 bg-white/5 rounded-lg">
-                    <p className="text-xs text-muted-foreground">Cal</p>
-                    <p className="font-bold text-foreground">{data.nutrition.calories}</p>
-                  </div>
-                  <div className="text-center p-2 bg-white/5 rounded-lg">
-                    <p className="text-xs text-muted-foreground">Protein</p>
-                    <p className="font-bold text-foreground">{data.nutrition.protein}g</p>
-                  </div>
-                  <div className="text-center p-2 bg-white/5 rounded-lg">
-                    <p className="text-xs text-muted-foreground">Carbs</p>
-                    <p className="font-bold text-foreground">{data.nutrition.carbs}g</p>
-                  </div>
-                  <div className="text-center p-2 bg-white/5 rounded-lg">
-                    <p className="text-xs text-muted-foreground">Fat</p>
-                    <p className="font-bold text-foreground">{data.nutrition.fat}g</p>
-                  </div>
-                </div>
-                <div className="p-3 bg-accent/20 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Recommendation</p>
-                  <p className="text-sm text-accent">{data.recommendation}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-foreground mb-2">Alternative Options</p>
-                  <div className="space-y-2">
-                    {data.alternativeOptions.map((option: string, i: number) => (
-                      <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>→</span>
-                        <span>{option}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </ResultCard>
-          </>
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex gap-3">
-          <button className="flex-1 glass-button bg-primary text-primary-foreground">
-            Save Result
-          </button>
-          <button className="flex-1 glass-button">Share</button>
-        </div>
+          )
+        })}
       </div>
 
       <BottomNavigation />
